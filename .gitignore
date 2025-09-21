@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+
+# Environment
+.env
+*.env
+.env.local
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Lock / cache
+uv.lock
+.cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+
+# Logs
+*.log
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
