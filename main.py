@@ -1,6 +1,7 @@
+# main.py
 import typer
 from rich.console import Console
-from core.agent import ComposioAgent
+from core.agent import DocumentSorterAgent
 
 app = typer.Typer()
 console = Console()
@@ -8,13 +9,13 @@ console = Console()
 @app.command()
 def start():
     """
-    Starts the Composio Agent in an interactive chat session.
+    Starts the Document Sorter Agent to run continuously in the background.
     """
-    console.print("[bold magenta]====================== Composio Agent ======================[/bold magenta]\n")
+    console.print("[bold magenta]================ Document Sorter Agent ================[/bold magenta]\n")
     
     try:
-        agent = ComposioAgent()
-        agent.run_interactive_chat()  # <-- Call the new interactive method
+        agent = DocumentSorterAgent()
+        agent.start_listening()
     except Exception as e:
         console.print(f"[bold red]A critical error occurred: {e}[/bold red]")
 
