@@ -1,6 +1,6 @@
 import time
 from rich.console import Console
-from .constants import COMPOSIO_CLIENT, GMAIL_TRIGGER_ID, PROCESS_LABEL_ID
+from .constants import COMPOSIO_CLIENT, GMAIL_TRIGGER_ID
 
 console = Console()
 
@@ -8,7 +8,6 @@ class DocumentSorterAgent:
     def __init__(self):
         self.composio = COMPOSIO_CLIENT
         self.trigger_id = GMAIL_TRIGGER_ID
-        self.label_id = PROCESS_LABEL_ID
         console.print("[bold green]📄 Document Sorter Agent Initialized.[/bold green]")
 
     def start_listening(self):
@@ -33,31 +32,15 @@ class DocumentSorterAgent:
 
             console.print(f"   - Inspecting Message ID: {message_id}")
 
+            # Check for an attachment directly from the trigger payload
             attachment_list = email_payload.get("attachment_list", [])
             has_attachment = len(attachment_list) > 0
             
             if has_attachment:
                 filename = attachment_list[0].get('filename', 'unknown_file')
                 console.print(f"   - [green]✅ Attachment found: {filename}[/green]")
-                console.print(f"   - Applying label '[bold yellow]{self.label_id}[/bold yellow]' to message...")
-                
-                # --- THIS IS THE FINAL, DEFINITIVELY CORRECT ACTION CALL ---
-                label_response = self.composio.toolkits.actions.execute_action(
-                    action="GMAIL_MODIFY_MESSAGE",
-                    params={
-                        "message_id": message_id,
-                        "add_label_ids": [self.label_id],
-                        "user_id": "me"
-                    }
-                )
-                
-                if label_response.get("successful"):
-                    console.print("   - [green]✅ Label applied successfully![/green]")
-                else:
-                    console.print("   - [red]❌ Failed to apply label.[/red]")
-                    console.print(label_response)
             else:
-                console.print("   - No attachments found. Ignoring this email.")
+                console.print("   - [yellow]No attachments found in this email.[/yellow]")
         
         try:
             while True:
