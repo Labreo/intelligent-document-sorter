@@ -1,6 +1,7 @@
 # core/constants.py
 import os
 from dotenv import load_dotenv
+
 from composio import Composio
 
 # Load environment variables
@@ -27,5 +28,12 @@ PROCESS_LABEL_ID = os.getenv("PROCESS_LABEL_ID")
 if not PROCESS_LABEL_ID:
     raise ValueError("PROCESS_LABEL_ID is not set in the .env file.")
 
+GMAIL_AUTH_CONFIG_ID = os.getenv("GMAIL_AUTH_CONFIG_ID")
+if not GMAIL_AUTH_CONFIG_ID:
+    raise ValueError("GMAIL_AUTH_CONFIG_ID is not set.")
+
+GOOGLE_DRIVE_AUTH_CONFIG_ID = os.getenv("GOOGLE_DRIVE_AUTH_CONFIG_ID")
+if not GOOGLE_DRIVE_AUTH_CONFIG_ID:
+    raise ValueError("GOOGLE_DRIVE_AUTH_CONFIG_ID is not set.")
 
 print("✅ Clients and configurations loaded.")
