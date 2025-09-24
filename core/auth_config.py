@@ -5,21 +5,21 @@ console = Console()
 
 def ensure_connection(composio: Composio, user_id: str, auth_config_id: str, app_name: str):
     """
-    Checks if a connection for a given auth_config exists for the user.
-    If not, it initiates the OAuth flow and waits for completion.
+    Checks for an active connection or initiates a new one.
+    Returns the connected_account object.
     """
     console.print(f"Verifying connection for [bold cyan]{app_name}[/bold cyan]...")
 
-    # 1. Check for an existing connection first
+    # 1. Check for an existing active connection
     try:
         connections = composio.connected_accounts.list(user_id=user_id)
         for conn in connections:
             if conn.auth_config_id == auth_config_id and conn.status == "active":
                 console.print(f"[green]✔ Active {app_name} connection found.[/green]")
-                return
+                # --- CHANGE 1: Return the existing connection ---
+                return conn
     except Exception:
-        # If listing fails, we'll proceed to initiate a new connection
-        pass
+        pass # Proceed to initiate a new connection if listing fails
 
     # 2. If no active connection is found, initiate a new one
     console.print(f"[yellow]No active {app_name} connection found. Starting setup...[/yellow]")
@@ -28,12 +28,15 @@ def ensure_connection(composio: Composio, user_id: str, auth_config_id: str, app
         auth_config_id=auth_config_id,
     )
 
-    # 3. Redirect user and wait
+    # 3. Redirect user and wait for completion
     redirect_url = connection_request.redirect_url
     console.print(f"\n[bold magenta]ACTION REQUIRED: Please authorize {app_name} by visiting this URL:[/bold magenta]")
     console.print(f"[link={redirect_url}]{redirect_url}[/link]\n")
     console.print("Waiting for you to complete the authorization in your browser...")
     
-    connection_request.wait_for_connection()
+    connected_account = connection_request.wait_for_connection()
     
     console.print(f"[bold green]✔ {app_name} connection established successfully![/bold green]")
+    
+    # --- CHANGE 2: Return the newly created connection ---
+    return connected_account
