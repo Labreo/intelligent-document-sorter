@@ -1,11 +1,12 @@
 import time
 import os
+import json # <-- Add this import
+from datetime import date # <-- Add this import
 from rich.console import Console
-from docstrange import DocumentExtractor # V2 Import
+from docstrange import DocumentExtractor
 
 from .constants import (
     COMPOSIO_CLIENT,
-    # GMAIL_TRIGGER_ID, # No longer needed
     COMPOSIO_USER_ID,
     GMAIL_AUTH_CONFIG_ID,
     GOOGLE_DRIVE_AUTH_CONFIG_ID
@@ -16,13 +17,13 @@ console = Console()
 
 class DocumentSorterAgent:
     def __init__(self):
+        # ... __init__ is largely the same, just removed the old category method
         self.composio = COMPOSIO_CLIENT
         self.user_id = COMPOSIO_USER_ID
-        self.folder_ids = {} # To store Google Drive folder IDs
+        self.folder_ids = {} 
         
         console.print("\n[bold]================ Document Sorter Agent Initialising ================[/bold]")
         
-        # --- V2: Initialize the Document Extractor ---
         try:
             self.extractor = DocumentExtractor()
             console.print("[green]✓ DocStrange Extractor Initialized.[/green]")
@@ -30,7 +31,6 @@ class DocumentSorterAgent:
             console.print(f"[bold red]❌ Failed to initialize DocStrange. Please run 'docstrange login'. Error: {e}[/bold red]")
             return
 
-        # ... (Rest of the __init__ method is the same)
         gmail_connection = ensure_connection(self.composio, self.user_id, GMAIL_AUTH_CONFIG_ID, "Gmail")
         self.trigger_id = self._get_or_create_trigger(gmail_connection.id)
         if not self.trigger_id:
@@ -87,34 +87,96 @@ class DocumentSorterAgent:
             except Exception as e:
                 console.print(f"[bold red]Error setting up folder {name}: {e}[/bold red]")
     
-    # --- NEW V2 HELPER METHODS ---
+    # --- V2.1: REFACTORED HELPER METHODS ---
     def _extract_text_with_docstrange(self, file_path: str) -> str | None:
         """Uses DocStrange to extract text content from a file."""
         console.print("   - [blue]   ↳ 🧠 Extracting text with DocStrange...[/blue]")
         try:
             result = self.extractor.extract(file_path)
-            # Using extract_markdown() as it often provides a clean, structured text output
             return result.extract_markdown()
         except Exception as e:
             console.print(f"   - [red]❌ DocStrange extraction failed: {e}[/red]")
             return None
 
-    def _get_category_from_content(self, document_text: str) -> str:
-        """Categorizes the document based on keywords in its extracted content."""
-        lower_text = document_text.lower()
-        if 'invoice' in lower_text:
-            return 'Invoices'
-        elif 'receipt' in lower_text:
-            return 'Receipts'
-        elif 'purchase order' in lower_text:
-            return 'Purchase Orders'
-        else:
-            return 'Uncategorized'
+    def _extract_structured_data_with_gemini(self, document_text: str) -> dict | None:
+        """Uses Gemini to classify the document and extract structured data."""
+        console.print("   - [blue]   ↳ 🤖 Asking Gemini to classify and extract data...[/blue]")
+
+        # A more universal prompt that asks for classification AND data extraction
+        prompt = f"""
+        Analyze the document text and perform two tasks:
+        1. Classify the document_type as one of: 'Invoice', 'Receipt', 'Purchase Order', or 'Other'.
+        2. Extract the following fields. If a field is not present or not applicable, use "N/A".
+            - document_type: The type of document.
+            - vendor_name: The name of the company or vendor on the document.
+            - document_id: The invoice number, receipt ID, or PO number.
+            - document_date: The primary date on the document (invoice date, receipt date, etc.), in YYYY-MM-DD format.
+            - total_amount: The final total amount, as a number.
+
+        Provide the output as a single, clean JSON object with no additional text or formatting.
+
+        --- DOCUMENT TEXT ---
+        {document_text[:8000]} 
+        --- END OF TEXT ---
+        """
+        try:
+            response = self.composio.tools.execute(
+                slug="GEMINI_GENERATE_CONTENT",
+                user_id=self.user_id,
+                arguments={
+                    "model": "gemini-1.5-flash",
+                    "prompt": prompt,
+                    "temperature": 0.0,
+                    # For Gemini, you can suggest JSON output in the prompt
+                    # and often it's smart enough. Some models have a specific JSON mode.
+                }
+            )
+            
+            # Extract the raw text from Gemini's response
+            llm_response_str = response.get("data", {}).get("text", "")
+            
+            # Clean up potential markdown formatting around the JSON
+            if llm_response_str.startswith("```json"):
+                llm_response_str = llm_response_str[7:-4]
+
+            if not llm_response_str:
+                return None
+
+            return json.loads(llm_response_str)
+
+        except Exception as e:
+            console.print(f"[red]   - ❌ Gemini data extraction failed: {e}[/red]")
+            return None
+
+    def _rename_file_from_data(self, structured_data: dict, original_path: str) -> str:
+        """Creates a standardized filename from extracted data and renames the local file."""
+        try:
+            doc_date = structured_data.get("document_date") or date.today().isoformat()
+            vendor = structured_data.get("vendor_name", "UnknownVendor")
+            doc_id = structured_data.get("document_id", "NoID")
+            
+            # Sanitize parts to make them filename-safe
+            vendor = "".join(c for c in vendor if c.isalnum() or c in " -_").rstrip()
+            doc_id = "".join(c for c in doc_id if c.isalnum() or c in " -_").rstrip()
+
+            _, extension = os.path.splitext(original_path)
+            directory = os.path.dirname(original_path)
+            
+            new_filename = f"{doc_date}_{vendor}_{doc_id}{extension}"
+            new_path = os.path.join(directory, new_filename)
+            
+            os.rename(original_path, new_path)
+            
+            console.print(f"   - [cyan]   ↳ 📝 Renamed file to:[/cyan] {new_filename}")
+            return new_path
+        except Exception as e:
+            console.print(f"   - [red]❌ Error renaming file: {e}[/red]")
+            return original_path
 
     def start_listening(self):
-        # ... (start_listening setup is the same)
         if not hasattr(self, 'trigger_id') or not self.trigger_id:
             return
+
         console.print(f"👂 Agent is now listening for trigger '[bold yellow]{self.trigger_id}[/bold yellow]'...")
         console.print("Press [bold red]Ctrl+C[/bold red] to stop the agent.")
         self.subscription = self.composio.triggers.subscribe()
@@ -122,18 +184,13 @@ class DocumentSorterAgent:
         @self.subscription.handle(trigger_id=self.trigger_id)
         def handle_new_email(data):
             # ... (email processing and attachment loop start is the same)
-            email_payload = data.get("payload", {})
-            message_id = email_payload.get("message_id")
-            attachment_list = email_payload.get("attachment_list", [])
+            email_payload, message_id, attachment_list = data.get("payload", {}), data.get("payload", {}).get("message_id"), data.get("payload", {}).get("attachment_list", [])
 
-            if not message_id or not attachment_list:
-                return
+            if not message_id or not attachment_list: return
 
             for attachment in attachment_list:
-                filename = attachment.get("filename", "unknown_file")
-                attachment_id = attachment.get("attachmentId")
-                if not attachment_id:
-                    continue
+                filename, attachment_id = attachment.get("filename", "unknown_file"), attachment.get("attachmentId")
+                if not attachment_id: continue
 
                 console.print(f"\n   - [green]Processing attachment:[/green] {filename}")
                 download_result = self.composio.tools.execute(
@@ -142,44 +199,44 @@ class DocumentSorterAgent:
                 )
 
                 if not download_result.get("successful"):
-                    console.print(f"   - [red]❌ Download failed.[/red]")
-                    continue
+                    console.print(f"   - [red]❌ Download failed.[/red]"); continue
                 
                 local_file_path = download_result["data"]["file"]
                 console.print(f"   - [bold green]   ↳ ✅ Download successful![/bold green]")
                 
-                # --- V2 WORKFLOW IN ACTION ---
-                
-                # Step 1: Read the content of the document using DocStrange
                 document_text = self._extract_text_with_docstrange(local_file_path)
-                
-                if not document_text:
-                    console.print("   - [yellow]Could not read text from document. Placing in Uncategorized.[/yellow]")
-                    category = "Uncategorized"
-                else:
-                    # Step 2: Categorize based on the extracted text content
-                    category = self._get_category_from_content(document_text)
-                
+                final_file_path = local_file_path
+                category = "Uncategorized"
+
+                if document_text:
+                    structured_data = self._extract_structured_data_with_gemini(document_text)
+                    if structured_data:
+                        # Get category from AI's classification
+                        doc_type_map = {
+                            "Invoice": "Invoices", "Receipt": "Receipts", "Purchase Order": "Purchase Orders"
+                        }
+                        category = doc_type_map.get(structured_data.get("document_type"), "Uncategorized")
+                        
+                        # Rename the file using the extracted data
+                        final_file_path = self._rename_file_from_data(structured_data, local_file_path)
+
                 console.print(f"   - [cyan]   ↳ 🤖 Document categorized as:[/cyan] {category}")
                 
-                # Step 3: Upload the file to the correct folder
                 destination_folder_id = self.folder_ids.get(category)
                 if not destination_folder_id:
-                    console.print(f"   - [red]❌ Could not find a destination folder for '{category}'. Skipping upload.[/red]")
-                    continue
+                    console.print(f"   - [red]❌ Could not find a destination folder for '{category}'.[/red]"); continue
 
                 console.print(f"   - [blue]Uploading to Google Drive folder '{category}'...[/blue]")
                 upload_result = self.composio.tools.execute(
-                    slug="GOOGLEDRIVE_UPLOAD_FILE",
-                    user_id=self.user_id,
-                    arguments={"file_to_upload": local_file_path, "folder_to_upload_to": destination_folder_id}
+                    slug="GOOGLEDRIVE_UPLOAD_FILE", user_id=self.user_id,
+                    arguments={"file_to_upload": final_file_path, "folder_to_upload_to": destination_folder_id}
                 )
 
                 if upload_result.get("successful"):
                     file_name = upload_result.get("data", {}).get("name")
                     console.print(f"   - [bold green]   ↳ ✅ Successfully uploaded '{file_name}' to Google Drive![/bold green]")
                 else:
-                    console.print(f"   - [red]❌ Upload failed:[/red] {upload_result.get('error')}")
+                    console.print(f"   - [red]❌ Upload failed.[/red]")
 
         try:
             while True: time.sleep(1)
