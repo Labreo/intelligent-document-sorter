@@ -1,5 +1,8 @@
 import time
+import os
 from rich.console import Console
+from docstrange import DocumentExtractor # V2 Import
+
 from .constants import (
     COMPOSIO_CLIENT,
     # GMAIL_TRIGGER_ID, # No longer needed
@@ -19,51 +22,45 @@ class DocumentSorterAgent:
         
         console.print("\n[bold]================ Document Sorter Agent Initialising ================[/bold]")
         
-        # --- UPDATED WORKFLOW ---
-        # 1. First, establish the Gmail connection to get the necessary ID for the trigger.
-        gmail_connection = ensure_connection(self.composio, self.user_id, GMAIL_AUTH_CONFIG_ID, "Gmail")
+        # --- V2: Initialize the Document Extractor ---
+        try:
+            self.extractor = DocumentExtractor()
+            console.print("[green]✓ DocStrange Extractor Initialized.[/green]")
+        except Exception as e:
+            console.print(f"[bold red]❌ Failed to initialize DocStrange. Please run 'docstrange login'. Error: {e}[/bold red]")
+            return
 
-        # 2. Programmatically get or create the trigger for that specific account.
+        # ... (Rest of the __init__ method is the same)
+        gmail_connection = ensure_connection(self.composio, self.user_id, GMAIL_AUTH_CONFIG_ID, "Gmail")
         self.trigger_id = self._get_or_create_trigger(gmail_connection.id)
         if not self.trigger_id:
             console.print("[bold red]❌ Critical error: Failed to set up trigger. Agent cannot start.[/bold red]")
-            return # Stop initialization if trigger setup fails
+            return
 
-        # 3. Now, set up the remaining connections and folders.
         ensure_connection(self.composio, self.user_id, GOOGLE_DRIVE_AUTH_CONFIG_ID, "Google Drive")
         self._setup_drive_folders(['Invoices', 'Receipts', 'Purchase Orders', 'Uncategorized'])
 
         console.print("\n[bold green]✅ All connections verified and folders configured. Agent is ready.[/bold green]")
 
     def _get_or_create_trigger(self, connected_account_id: str) -> str | None:
-        """Checks for an active trigger or creates one if it doesn't exist."""
+        # This method remains unchanged
         console.print("\n[bold]Configuring Gmail Trigger...[/bold]")
         try:
-            # Check if a trigger for this account already exists
             triggers = self.composio.triggers.list_active(
-                trigger_names=["GMAIL_NEW_GMAIL_MESSAGE"],
-                connected_account_ids=[connected_account_id],
+                trigger_names=["GMAIL_NEW_GMAIL_MESSAGE"], connected_account_ids=[connected_account_id],
             )
-
             if triggers.items:
                 trigger_id = triggers.items[0].id
                 console.print(f"   - [green]✓ Found existing active trigger:[/green] {trigger_id}")
                 return trigger_id
-
-            # If no trigger exists, create one
+            
             console.print("   - No active trigger found. Creating a new one...")
             response = self.composio.triggers.create(
-                slug="GMAIL_NEW_GMAIL_MESSAGE",
-                connected_account_id=connected_account_id,
-                trigger_config={}, # Empty config watches the entire inbox
+                slug="GMAIL_NEW_GMAIL_MESSAGE", connected_account_id=connected_account_id, trigger_config={},
             )
-            
-            # --- FIX: The create response uses .trigger_id, not .id ---
             trigger_id = response.trigger_id
-            
             console.print(f"   - [green]✓ Successfully created new trigger:[/green] {trigger_id}")
             return trigger_id
-
         except Exception as e:
             console.print(f"[bold red]   - ❌ Error configuring trigger: {e}[/bold red]")
             return None
@@ -89,63 +86,83 @@ class DocumentSorterAgent:
                 self.folder_ids[name] = folder_id
             except Exception as e:
                 console.print(f"[bold red]Error setting up folder {name}: {e}[/bold red]")
+    
+    # --- NEW V2 HELPER METHODS ---
+    def _extract_text_with_docstrange(self, file_path: str) -> str | None:
+        """Uses DocStrange to extract text content from a file."""
+        console.print("   - [blue]   ↳ 🧠 Extracting text with DocStrange...[/blue]")
+        try:
+            result = self.extractor.extract(file_path)
+            # Using extract_markdown() as it often provides a clean, structured text output
+            return result.extract_markdown()
+        except Exception as e:
+            console.print(f"   - [red]❌ DocStrange extraction failed: {e}[/red]")
+            return None
 
-    def _categorize_document(self, filename: str) -> str:
-        # This method remains unchanged
-        lower_filename = filename.lower()
-        if 'invoice' in lower_filename or 'inv_' in lower_filename: return 'Invoices'
-        elif 'receipt' in lower_filename: return 'Receipts'
-        elif 'purchase order' in lower_filename or 'po_' in lower_filename: return 'Purchase Orders'
-        else: return 'Uncategorized'
+    def _get_category_from_content(self, document_text: str) -> str:
+        """Categorizes the document based on keywords in its extracted content."""
+        lower_text = document_text.lower()
+        if 'invoice' in lower_text:
+            return 'Invoices'
+        elif 'receipt' in lower_text:
+            return 'Receipts'
+        elif 'purchase order' in lower_text:
+            return 'Purchase Orders'
+        else:
+            return 'Uncategorized'
 
     def start_listening(self):
+        # ... (start_listening setup is the same)
         if not hasattr(self, 'trigger_id') or not self.trigger_id:
-            console.print("[bold red]Agent cannot listen: Trigger ID was not set during initialization.[/bold red]")
             return
-
         console.print(f"👂 Agent is now listening for trigger '[bold yellow]{self.trigger_id}[/bold yellow]'...")
         console.print("Press [bold red]Ctrl+C[/bold red] to stop the agent.")
-
-        # Assign subscription to self to keep it in scope
         self.subscription = self.composio.triggers.subscribe()
 
         @self.subscription.handle(trigger_id=self.trigger_id)
         def handle_new_email(data):
-            # This logic remains unchanged
-            console.print("\n🚀 New email detected! Executing workflow...")
+            # ... (email processing and attachment loop start is the same)
             email_payload = data.get("payload", {})
             message_id = email_payload.get("message_id")
             attachment_list = email_payload.get("attachment_list", [])
 
             if not message_id or not attachment_list:
-                console.print("   - [yellow]Email has no attachments or is missing a message_id. Skipping.[/yellow]")
                 return
 
             for attachment in attachment_list:
                 filename = attachment.get("filename", "unknown_file")
                 attachment_id = attachment.get("attachmentId")
                 if not attachment_id:
-                    console.print(f"   - [yellow]Skipping attachment with no ID: {filename}[/yellow]")
                     continue
 
                 console.print(f"\n   - [green]Processing attachment:[/green] {filename}")
-                console.print("   - [blue]Downloading from Gmail...[/blue]")
                 download_result = self.composio.tools.execute(
-                    slug="GMAIL_GET_ATTACHMENT",
-                    user_id=self.user_id,
+                    slug="GMAIL_GET_ATTACHMENT", user_id=self.user_id,
                     arguments={"message_id": message_id, "attachment_id": attachment_id, "file_name": filename}
                 )
 
                 if not download_result.get("successful"):
-                    console.print(f"   - [red]❌ Download failed:[/red] {download_result.get('error')}")
+                    console.print(f"   - [red]❌ Download failed.[/red]")
                     continue
                 
                 local_file_path = download_result["data"]["file"]
-                console.print(f"   - [bold green]   ↳ ✅ Download successful! Saved to:[/bold green] {local_file_path}")
-
-                category = self._categorize_document(filename)
+                console.print(f"   - [bold green]   ↳ ✅ Download successful![/bold green]")
+                
+                # --- V2 WORKFLOW IN ACTION ---
+                
+                # Step 1: Read the content of the document using DocStrange
+                document_text = self._extract_text_with_docstrange(local_file_path)
+                
+                if not document_text:
+                    console.print("   - [yellow]Could not read text from document. Placing in Uncategorized.[/yellow]")
+                    category = "Uncategorized"
+                else:
+                    # Step 2: Categorize based on the extracted text content
+                    category = self._get_category_from_content(document_text)
+                
                 console.print(f"   - [cyan]   ↳ 🤖 Document categorized as:[/cyan] {category}")
-
+                
+                # Step 3: Upload the file to the correct folder
                 destination_folder_id = self.folder_ids.get(category)
                 if not destination_folder_id:
                     console.print(f"   - [red]❌ Could not find a destination folder for '{category}'. Skipping upload.[/red]")
