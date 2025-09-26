@@ -1,10 +1,10 @@
-# core/constants.py
+# agent_name/core/constants.py
+
 import os
 from dotenv import load_dotenv
-
 from composio import Composio
 
-# Load environment variables
+# Load environment variables from .env file
 load_dotenv()
 
 # --- Initialize Composio Client ---
@@ -13,23 +13,16 @@ if not COMPOSIO_API_KEY:
     raise ValueError("COMPOSIO_API_KEY is not set in the .env file.")
 COMPOSIO_CLIENT = Composio(api_key=COMPOSIO_API_KEY)
 
-
 # --- User Configuration ---
-COMPOSIO_USER_ID = os.getenv("COMPOSIO_USER_ID")
-if not COMPOSIO_USER_ID:
-    raise ValueError("COMPOSIO_USER_ID is not set in the .env file.")
+# A unique identifier for the end-user running the agent
+COMPOSIO_USER_ID = os.getenv("COMPOSIO_USER_ID", "default-user")
 
-# --- Document Sorter Config ---
-GMAIL_TRIGGER_ID = os.getenv("GMAIL_TRIGGER_ID")
-if not GMAIL_TRIGGER_ID:
-    raise ValueError("GMAIL_TRIGGER_ID is not set in the .env file.")
-
+# --- Auth Config IDs ---
+# These IDs tell Composio which application credentials to use for the OAuth flow.
 GMAIL_AUTH_CONFIG_ID = os.getenv("GMAIL_AUTH_CONFIG_ID")
 if not GMAIL_AUTH_CONFIG_ID:
-    raise ValueError("GMAIL_AUTH_CONFIG_ID is not set.")
+    raise ValueError("GMAIL_AUTH_CONFIG_ID is not set in the .env file.")
 
 GOOGLE_DRIVE_AUTH_CONFIG_ID = os.getenv("GOOGLE_DRIVE_AUTH_CONFIG_ID")
 if not GOOGLE_DRIVE_AUTH_CONFIG_ID:
-    raise ValueError("GOOGLE_DRIVE_AUTH_CONFIG_ID is not set.")
-
-print("✅ Clients and configurations loaded.")
+    raise ValueError("GOOGLE_DRIVE_AUTH_CONFIG_ID is not set in the .env file.")
