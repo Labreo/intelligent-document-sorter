@@ -55,7 +55,7 @@ source .venv/bin/activate
 uv pip install -r requirements.txt
 ```
 
-*(Note: If `requirements.txt` does not exist, it can be generated with `uv pip freeze > requirements.txt`)*
+*(Note: If `requirements.txt` does not exist, it should be generated with `uv pip freeze > requirements.txt` first)*
 
 #### 4\. Configure Environment Variables
 
@@ -82,6 +82,8 @@ This is a one-time command to authenticate the DocStrange CLI with your account.
 docstrange login
 ```
 
+*(Note:Docstrange requires an api key which can be freely generated from their website:https://docstrange.nanonets.com/)*
+
 Follow the on-screen prompts to complete the authentication process.
 
 -----
@@ -101,7 +103,7 @@ source .venv/bin/activate
 Execute the main script using the `start` command defined in the Typer CLI.
 
 ```bash
-python main.py start
+python main.py
 ```
 
 Upon execution, the agent initializes and performs its setup sequence, which includes verifying connections, configuring triggers, and ensuring Drive folders exist. The agent is fully operational once the message `👂 Agent is now listening for trigger...` is displayed in the console. It will now run continuously, monitoring the specified Gmail account for new attachments.
