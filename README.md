@@ -72,8 +72,6 @@ Edit the `.env` file and provide values for the following variables:
   * `GMAIL_AUTH_CONFIG_ID`: The Auth Config ID for Gmail from your Composio Dashboard.
   * `GOOGLE_DRIVE_AUTH_CONFIG_ID`: The Auth Config ID for Google Drive from your Composio Dashboard.
 
-Note:The program works without gmail and googledrive auth config ids but you will have to create new connections each time you run the program.
-
 #### 5\. Authenticate DocStrange
 
 This is a one-time command to authenticate the DocStrange CLI with your account.
